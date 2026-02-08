@@ -17,6 +17,7 @@ local espConsoleEnabled = false
 local espTicketEnabled = false
 local espPlayerEnabled = false
 local vipBypassEnabled = false
+local wallBypassEnabled = false
 
 local espObjects = {}
 local consoleEspObjects = {}
@@ -29,6 +30,7 @@ local espConsoleConnection = nil
 local espTicketConnection = nil
 local espPlayerConnection = nil
 local vipBypassConnection = nil
+local wallBypassConnection = nil
 
 -- Criar ScreenGui principal
 local ScreenGui = Instance.new("ScreenGui")
@@ -526,6 +528,99 @@ local function VipBypass(enabled)
     end
 end
 
+-- Função Wall Bypass
+local wallOriginalProperties = {}
+
+local function WallBypass(enabled)
+    wallBypassEnabled = enabled
+    
+    if wallBypassConnection then
+        wallBypassConnection:Disconnect()
+        wallBypassConnection = nil
+    end
+    
+    if enabled then
+        local function processWalls()
+            -- Processar pasta Walls
+            local walls = workspace:FindFirstChild("Walls")
+            if walls then
+                local wall10 = walls:FindFirstChild("10")
+                if wall10 then
+                    if wall10:IsA("Model") then
+                        for _, part in pairs(wall10:GetDescendants()) do
+                            if part:IsA("BasePart") then
+                                if not wallOriginalProperties[part] then
+                                    wallOriginalProperties[part] = {
+                                        Transparency = part.Transparency,
+                                        CanCollide = part.CanCollide
+                                    }
+                                end
+                                part.Transparency = 1
+                                part.CanCollide = false
+                            end
+                        end
+                    elseif wall10:IsA("BasePart") then
+                        if not wallOriginalProperties[wall10] then
+                            wallOriginalProperties[wall10] = {
+                                Transparency = wall10.Transparency,
+                                CanCollide = wall10.CanCollide
+                            }
+                        end
+                        wall10.Transparency = 1
+                        wall10.CanCollide = false
+                    end
+                end
+            end
+            
+            -- Processar pasta RightWalls
+            local rightWalls = workspace:FindFirstChild("RightWalls")
+            if rightWalls then
+                for _, obj in pairs(rightWalls:GetDescendants()) do
+                    if obj:IsA("BasePart") then
+                        if not wallOriginalProperties[obj] then
+                            wallOriginalProperties[obj] = {
+                                Transparency = obj.Transparency,
+                                CanCollide = obj.CanCollide,
+                                Size = obj.Size,
+                                CFrame = obj.CFrame
+                            }
+                        end
+                        obj.Transparency = 1
+                        obj.CanCollide = false
+                        
+                        -- Esticar parte Bottom
+                        if obj.Name == "Bottom" then
+                            local originalSize = wallOriginalProperties[obj].Size
+                            obj.Size = Vector3.new(originalSize.X * 3, originalSize.Y, originalSize.Z * 3)
+                        end
+                    end
+                end
+            end
+        end
+        
+        processWalls()
+        
+        wallBypassConnection = RunService.Heartbeat:Connect(function()
+            processWalls()
+        end)
+    else
+        -- Restaurar propriedades originais
+        for part, props in pairs(wallOriginalProperties) do
+            if part and part.Parent then
+                part.Transparency = props.Transparency
+                part.CanCollide = props.CanCollide
+                if props.Size then
+                    part.Size = props.Size
+                end
+                if props.CFrame then
+                    part.CFrame = props.CFrame
+                end
+            end
+        end
+        wallOriginalProperties = {}
+    end
+end
+
 -- Função Bring Console
 local function BringConsole(enabled)
     bringConsoleEnabled = enabled
@@ -803,6 +898,8 @@ local function EspPlayer(enabled)
     espObjects = {}
     
     if enabled then
+        local updateTick = 0
+        
         local function createPlayerESP(player)
             local character = player.Character
             if not character or not character:FindFirstChild("HumanoidRootPart") then return end
@@ -810,86 +907,122 @@ local function EspPlayer(enabled)
             local hrp = character.HumanoidRootPart
             local isLocalPlayer = (player == LocalPlayer)
             
-            -- ESP Box
+            -- ESP Box melhorada com BoxHandleAdornment
+            local espBox = Instance.new("BoxHandleAdornment")
+            espBox.Name = "PlayerESP"
+            espBox.Adornee = hrp
+            espBox.Size = Vector3.new(4, 5.5, 1.5)
+            espBox.Color3 = isLocalPlayer and Color3.fromRGB(160, 32, 240) or Color3.fromRGB(0, 255, 0)
+            espBox.Transparency = 0.5
+            espBox.AlwaysOnTop = true
+            espBox.ZIndex = 5
+            espBox.Parent = hrp
+            
+            table.insert(espObjects, espBox)
+            
+            -- Nome do jogador
             local billboard = Instance.new("BillboardGui")
-            billboard.Name = "PlayerESP"
+            billboard.Name = "PlayerESP_Name"
             billboard.Adornee = hrp
+            billboard.Size = UDim2.new(0, 150, 0, 40)
+            billboard.StudsOffset = Vector3.new(0, 3.5, 0)
             billboard.AlwaysOnTop = true
             billboard.Parent = hrp
             
-            local frame = Instance.new("Frame")
-            frame.BackgroundColor3 = isLocalPlayer and Color3.fromRGB(160, 32, 240) or Color3.fromRGB(0, 255, 0)
-            frame.BackgroundTransparency = 0.5
-            frame.BorderSizePixel = 3
-            frame.BorderColor3 = isLocalPlayer and Color3.fromRGB(160, 32, 240) or Color3.fromRGB(0, 255, 0)
-            frame.Parent = billboard
-            
             local nameLabel = Instance.new("TextLabel")
-            nameLabel.Size = UDim2.new(1, 0, 0, 30)
-            nameLabel.Position = UDim2.new(0, 0, -0.5, 0)
+            nameLabel.Size = UDim2.new(1, 0, 1, 0)
             nameLabel.BackgroundTransparency = 1
             nameLabel.Text = player.Name
             nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
             nameLabel.Font = Enum.Font.GothamBold
-            nameLabel.TextStrokeTransparency = 0
+            nameLabel.TextSize = 18
+            nameLabel.TextStrokeTransparency = 0.3
             nameLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
             nameLabel.Parent = billboard
             
             table.insert(espObjects, billboard)
             
-            -- Linha para outros jogadores
+            -- Linha melhorada para outros jogadores
             if not isLocalPlayer then
                 local attach0 = Instance.new("Attachment")
+                attach0.Name = "PlayerESP_Attach0"
                 attach0.Parent = LocalPlayer.Character.HumanoidRootPart
                 
                 local attach1 = Instance.new("Attachment")
+                attach1.Name = "PlayerESP_Attach1"
                 attach1.Parent = hrp
                 
                 local beam = Instance.new("Beam")
-                beam.Name = "PlayerESP"
+                beam.Name = "PlayerESP_Line"
                 beam.Attachment0 = attach0
                 beam.Attachment1 = attach1
                 beam.Color = ColorSequence.new(Color3.fromRGB(0, 255, 0))
-                beam.Width0 = 0.3
-                beam.Width1 = 0.3
+                beam.Width0 = 0.5
+                beam.Width1 = 0.5
                 beam.FaceCamera = true
-                beam.Transparency = NumberSequence.new(0.3)
+                beam.Transparency = NumberSequence.new(0.2)
+                beam.LightEmission = 0.5
+                beam.LightInfluence = 0
                 beam.Parent = hrp
                 
                 table.insert(espObjects, beam)
                 table.insert(espObjects, attach0)
                 table.insert(espObjects, attach1)
+                
+                -- Distância
+                local distBillboard = Instance.new("BillboardGui")
+                distBillboard.Name = "PlayerESP_Distance"
+                distBillboard.Adornee = hrp
+                distBillboard.Size = UDim2.new(0, 100, 0, 30)
+                distBillboard.StudsOffset = Vector3.new(0, -3, 0)
+                distBillboard.AlwaysOnTop = true
+                distBillboard.Parent = hrp
+                
+                local distLabel = Instance.new("TextLabel")
+                distLabel.Size = UDim2.new(1, 0, 1, 0)
+                distLabel.BackgroundTransparency = 1
+                distLabel.Text = "0m"
+                distLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+                distLabel.Font = Enum.Font.Gotham
+                distLabel.TextSize = 14
+                distLabel.TextStrokeTransparency = 0.5
+                distLabel.Parent = distBillboard
+                
+                table.insert(espObjects, distBillboard)
             end
-            
-            -- Atualizar tamanho baseado na distância
-            spawn(function()
-                while billboard and billboard.Parent and espPlayerEnabled do
-                    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-                        local distance = (LocalPlayer.Character.HumanoidRootPart.Position - hrp.Position).Magnitude
-                        local size = math.clamp(500 / distance, 50, 300)
-                        billboard.Size = UDim2.new(0, size, 0, size * 1.5)
-                        nameLabel.TextSize = math.clamp(size / 10, 14, 28)
-                        frame.Size = UDim2.new(1, 0, 0.7, 0)
-                        frame.Position = UDim2.new(0, 0, 0.3, 0)
-                    end
-                    wait(0.1)
-                end
-            end)
         end
         
         espPlayerConnection = RunService.Heartbeat:Connect(function()
-            for _, player in pairs(Players:GetPlayers()) do
-                if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-                    local hasESP = false
-                    for _, esp in pairs(espObjects) do
-                        if esp and esp.Adornee == player.Character.HumanoidRootPart then
-                            hasESP = true
-                            break
+            updateTick = updateTick + 1
+            
+            -- Atualizar distâncias a cada 10 frames (otimização)
+            if updateTick % 10 == 0 then
+                for _, esp in pairs(espObjects) do
+                    if esp and esp.Name == "PlayerESP_Distance" and esp.Parent then
+                        local distLabel = esp:FindFirstChildOfClass("TextLabel")
+                        if distLabel and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                            local distance = (LocalPlayer.Character.HumanoidRootPart.Position - esp.Adornee.Position).Magnitude
+                            distLabel.Text = math.floor(distance) .. "m"
                         end
                     end
-                    
-                    if not hasESP then
-                        createPlayerESP(player)
+                end
+            end
+            
+            -- Verificar e criar ESPs novos a cada 30 frames
+            if updateTick % 30 == 0 then
+                for _, player in pairs(Players:GetPlayers()) do
+                    if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                        local hasESP = false
+                        for _, esp in pairs(espObjects) do
+                            if esp and esp.Adornee == player.Character.HumanoidRootPart then
+                                hasESP = true
+                                break
+                            end
+                        end
+                        
+                        if not hasESP then
+                            createPlayerESP(player)
+                        end
                     end
                 end
             end
@@ -919,6 +1052,7 @@ CreateCheckbox("ESP Ticket", 190, GamerPage, EspTicket)
 
 -- VIP Page
 CreateCheckbox("VIP Bypass", 10, VipPage, VipBypass)
+CreateCheckbox("Wall Bypass", 70, VipPage, WallBypass)
 
 -- ESP Page
 CreateCheckbox("ESP Players", 10, EspPage, EspPlayer)
@@ -986,6 +1120,7 @@ CloseButton.MouseButton1Click:Connect(function()
     EspTicket(false)
     EspPlayer(false)
     VipBypass(false)
+    WallBypass(false)
     
     -- Destruir UI
     ScreenGui:Destroy()
